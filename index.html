@@ -97,9 +97,10 @@
   <div id="cmdbtns">
     <button id="bVillage" type="button">Créer village</button>
     <button id="bUnArret" type="button">Poser un arrêt (visé)</button>
+    <button id="bSupVoie" type="button">Supprimer la voie</button>
     <button id="bSupArrets" type="button">Supprimer les arrêts</button>
     <span class="grp">Arrêts tous les <input id="nArrets" type="number" min="10" max="20000" value="700"> blocs <button id="bArrets" type="button">Poser les arrêts</button></span>
-    <span class="grp">Longueur <input id="nVoie" type="number" min="1" max="20000" value="4000"> blocs <button id="bVoie" type="button">Allonger la voie</button></span>
+    <span class="grp">Longueur <input id="nVoie" type="number" min="1" max="20000" value="4000"> blocs <button id="bVoie" type="button">Créer la voie en boucle</button></span>
   </div></div>
 <div id="bar"></div>
 <div id="inv">
@@ -3242,6 +3243,7 @@ cmdIn.addEventListener('keyup',e=>e.stopPropagation());
   const go=line=>{closeCmd();runCommand(line)};
   bC.addEventListener('click',()=>go('/creer_village'));
   document.getElementById('bUnArret').addEventListener('click',()=>go('/delimiter_arrets_metro'));
+  document.getElementById('bSupVoie').addEventListener('click',()=>go('/supprimer_voie'));
   document.getElementById('bSupArrets').addEventListener('click',()=>go('/supprimer_arrets_metro'));
   bA.addEventListener('click',()=>go('/arrets_'+Math.max(10,parseInt(nA.value,10)||700)));
   bV.addEventListener('click',()=>go('/prolonger_voie '+Math.max(1,parseInt(nV.value,10)||4000)));
@@ -3276,38 +3278,57 @@ function walkTrack(x,y,z,d,max){
 }
 function trackNeighbors(x,y,z){return RDIRS.filter(d=>railLoad(x+d[0],y,z+d[1]))}
 function lookDir2(){camera.getWorldDirection(dirV);return[dirV.x,dirV.z]}
+const RAILID=RAILB.findIndex(v=>v===1);
 function extendTrack(N){
-  const s=findTrackRail();
-  if(!s){say('Visez un rail du métro (ou placez-vous près de la voie), puis retapez la commande.','#ff8a8a');return}
-  const y=s[1],L=lookDir2(),rid=get(s[0],y,s[2]);
-  const ns=trackNeighbors(s[0],y,s[2]);
-  let end,dir;
-  if(!ns.length){dir=Math.abs(L[0])>Math.abs(L[1])?[Math.sign(L[0]),0]:[0,Math.sign(L[1])];end=[s[0],s[2]]}
-  else{
-    let bestD=null,bv=-9;
-    for(const d of ns){const v=d[0]*L[0]+d[1]*L[1];if(v>bv){bv=v;bestD=d}}
-    if(ns.length===1&&bv<0){dir=[-bestD[0],-bestD[1]];end=[s[0],s[2]]}
-    else{const w=walkTrack(s[0],y,s[2],bestD,30000);dir=[w.dx,w.dz];end=[w.cx,w.cz]}
-  }
-  let n=0,tunnel=0,bridge=0,x=end[0],z=end[1];
-  for(let i=1;i<=N;i++){
-    x+=dir[0];z+=dir[1];
-    const a=x>>4,b=z>>4;if(!chunkMap.has(ckey(a,b)))genChunk(a,b);
-    let deep=0;
-    for(let o=-1;o<=1;o++){
-      const qx=x+(dir[0]===0?o:0),qz=z+(dir[1]===0?o:0);
-      const a2=qx>>4,b2=qz>>4;if(!chunkMap.has(ckey(a2,b2)))genChunk(a2,b2);
-      for(let k=(o===0?1:0);k<=3;k++){const bb=get(qx,y+k,qz);if(bb!==0&&!ISW[bb]){setBlock(qx,y+k,qz,0);if(k===1&&o===0)tunnel++}}
-      let yy=y-1,cnt=0;
-      while(yy>0&&cnt<60){const bb=get(qx,yy,qz);if(bb!==0&&!ISW[bb])break;setBlock(qx,yy,qz,9);yy--;cnt++}
-      if(o===0)deep=cnt;
+  const L=lookDir2(),s=findTrackRail();
+  let y,E,dir,rid=RAILID,existing=false;
+  if(s){
+    y=s[1];rid=get(s[0],y,s[2])||RAILID;existing=true;
+    const ns=trackNeighbors(s[0],y,s[2]);
+    if(!ns.length){dir=Math.abs(L[0])>Math.abs(L[1])?[Math.sign(L[0])||1,0]:[0,Math.sign(L[1])||1];E=[s[0],s[2]]}
+    else{
+      let bestD=null,bv=-9;
+      for(const d of ns){const v=d[0]*L[0]+d[1]*L[1];if(v>bv){bv=v;bestD=d}}
+      if(ns.length===1&&bv<0){dir=[-bestD[0],-bestD[1]];E=[s[0],s[2]]}
+      else{const w=walkTrack(s[0],y,s[2],bestD,30000);dir=[w.dx,w.dz];E=[w.cx,w.cz]}
     }
-    if(deep>3)bridge++;
-    setBlock(x,y,z,rid);n++;
+  }else{
+    const h=raycast();
+    if(!h){say('Visez le sol (ou un rail) à l\'endroit où la voie doit commencer.','#ff8a8a');return}
+    y=h.y+1;E=[h.x,h.z];dir=Math.abs(L[0])>Math.abs(L[1])?[Math.sign(L[0])||1,0]:[0,Math.sign(L[1])||1];
   }
+  const p=[-dir[1],dir[0]],rails=[],rk=new Set();
+  const addR=(x,z)=>{const k=x+','+z;if(!rk.has(k)){rk.add(k);rails.push([x,z])}};
+  for(let i=0;i<=N;i++){addR(E[0]+dir[0]*i,E[1]+dir[1]*i);addR(E[0]+2*p[0]+dir[0]*i,E[1]+2*p[1]+dir[1]*i)}
+  addR(E[0]+p[0],E[1]+p[1]);addR(E[0]+dir[0]*N+p[0],E[1]+dir[1]*N+p[1]);
+  const prep=new Set(),cells=[];
+  for(const r of rails)for(let a=-1;a<=1;a++)for(let c=-1;c<=1;c++){const k=(r[0]+a)+','+(r[1]+c);if(!prep.has(k)){prep.add(k);cells.push([r[0]+a,r[1]+c])}}
+  let bridge=0,tunnel=0;
+  for(const q of cells){
+    const qx=q[0],qz=q[1],a2=qx>>4,b2=qz>>4;if(!chunkMap.has(ckey(a2,b2)))genChunk(a2,b2);
+    if(RAILB[get(qx,y,qz)]===1)continue;
+    for(let k=0;k<=3;k++){const bb=get(qx,y+k,qz);if(bb!==0&&!ISW[bb]){setBlock(qx,y+k,qz,0);if(k===1)tunnel++}}
+    let yy=y-1,cnt=0;
+    while(yy>0&&cnt<60){const bb=get(qx,yy,qz);if(bb!==0&&!ISW[bb])break;setBlock(qx,yy,qz,9);yy--;cnt++}
+    if(cnt>3)bridge++;
+  }
+  for(const r of rails)setBlock(r[0],y,r[1],rid);
   needSave=true;
-  say('Voie prolongée de '+n+' blocs (3 de large, 3 de haut)'+(tunnel?' (tunnel creusé sur '+tunnel+' blocs)':'')+(bridge?' (remblais/pont sur '+bridge+' blocs)':'')+'.','#a8e6ff');
-  say('Le nouveau bout est à x='+x+' z='+z+'. /prolonger_voie N pour continuer.','#9fb4e8');
+  say('Voie en boucle créée : rectangle de '+(N+1)+' x 3 blocs (deux rails espacés d\'un bloc, reliés à leurs bouts), 3 blocs de large et de haut'+(tunnel?', tunnel creusé':'')+(bridge?', remblais/pont':'')+'.','#a8e6ff');
+  say('Posez une rame (onglet Transport) sur un rail : elle tourne en boucle. Coin de départ x='+E[0]+' z='+E[1]+'.','#9fb4e8');
+}
+function deleteTrack(){
+  const s=findTrackRail();
+  if(!s){say('Visez un rail du métro (ou placez-vous près de la voie), puis recliquez.','#ff8a8a');return}
+  const y=s[1],seen=new Set([s[0]+','+s[2]]),q=[[s[0],s[2]]];let n=0;
+  for(let i=0;i<q.length&&i<400000;i++){
+    const c=q[i];
+    for(const d of RDIRS){const nx=c[0]+d[0],nz=c[1]+d[1],k=nx+','+nz;if(!seen.has(k)&&railLoad(nx,y,nz)){seen.add(k);q.push([nx,nz])}}
+  }
+  for(const c of q){setBlock(c[0],y,c[1],0);n++}
+  if(cur.metroStops)for(const k in cur.metroStops){const p3=k.split(',').map(Number);if(p3[1]===y&&seen.has(p3[0]+','+p3[2])){delete cur.metroStops[k];removeStopMesh(k)}}
+  needSave=true;
+  say(n+' blocs de rails supprimés ('+(n>1?'toute la voie reliée':'1 rail')+').','#ffd86b');
 }
 function stopsEvery(N){
   const s=findTrackRail();
@@ -3339,11 +3360,12 @@ function runCommand(line){
   if(line[0]!=='/'){say('<Vous> '+line);return}
   const parts=line.slice(1).trim().split(/\s+/),cmd=norm(parts[0]||''),args=parts.slice(1);
   let _m;
+  if(cmd==='supprimer_voie'||cmd==='supprimer_la_voie'){deleteTrack();return}
   if((_m=/^prolonger_?voie_?(\d+)?$/.exec(cmd))){extendTrack(Math.min(20000,parseInt(_m[1]||args[0],10)||4000));return}
   if((_m=/^arrets?_?(?:metro_?)?(\d+)$/.exec(cmd))||(cmd==='arrets'&&args[0])){stopsEvery(Math.max(10,parseInt(_m?_m[1]:args[0],10)||700));return}
   switch(cmd){
     case 'aide':case 'help':case '?':
-      say('Commandes : /créer_village · /supprimer_village [n|tous] · /position_villages · /tp_village n · /cote · /église [petite] · /pont bois|pierre [n] · /rivière [n] · /ferme · /animal nom [n] · /animaux · /supprimer_animaux · /prolonger_voie 4000 · /arrets_700 · /supprimer_villageois · /heure jour|nuit · /tp x [y] z · /position · /graine · /vol · /rendu n','#ffd86b');break;
+      say('Commandes : /créer_village · /supprimer_village [n|tous] · /position_villages · /tp_village n · /cote · /église [petite] · /pont bois|pierre [n] · /rivière [n] · /ferme · /animal nom [n] · /animaux · /supprimer_animaux · /prolonger_voie 4000 · /arrets_700 · /supprimer_voie · /supprimer_villageois · /heure jour|nuit · /tp x [y] z · /position · /graine · /vol · /rendu n','#ffd86b');break;
     case 'creer_village':case 'village':{
       const r=createVillage();
       say('Village créé devant vous : '+r.houses+' maisons et '+r.villagers+' villageois'+(r.port?', avec un port !':'.')+' Clic droit sur un villageois pour lui parler. /position_villages','#8be28b');break;}
