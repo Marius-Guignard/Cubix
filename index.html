@@ -96,6 +96,7 @@
 <div id="cmd"><div class="cmdhead">Invite de commande · tapez /aide</div><input id="cmdin" type="text" autocomplete="off" spellcheck="false" placeholder="/créer_village">
   <div id="cmdbtns">
     <button id="bVillage" type="button">Créer village</button>
+    <span class="grp">Métros tous les <input id="nMetros" type="number" min="10" max="20000" value="800"> blocs <button id="bMetros" type="button">Poser les métros</button></span>
     <span class="grp">Vitesse max <input id="nVit" type="number" min="0" max="200" value="80"> km/h <button id="bLimit" type="button">Limiter (rail visé)</button></span>
     <button id="bUnArret" type="button">Poser un arrêt (visé)</button>
     <button id="bSupMetro" type="button">Supprimer les métros</button>
@@ -3296,6 +3297,9 @@ cmdIn.addEventListener('keyup',e=>e.stopPropagation());
   document.getElementById('nVit').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape')closeCmd();if(e.key==='Enter'){e.preventDefault();document.getElementById('bLimit').click()}});
   document.getElementById('nVit').addEventListener('keyup',e=>e.stopPropagation());
   document.getElementById('bSupMetro').addEventListener('click',()=>go('/supprimer_metro'));
+  document.getElementById('bMetros').addEventListener('click',()=>go('/metros_'+Math.max(10,parseInt(document.getElementById('nMetros').value,10)||800)));
+  document.getElementById('nMetros').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape')closeCmd();if(e.key==='Enter'){e.preventDefault();document.getElementById('bMetros').click()}});
+  document.getElementById('nMetros').addEventListener('keyup',e=>e.stopPropagation());
   document.getElementById('bSupVoie').addEventListener('click',()=>go('/supprimer_voie'));
   document.getElementById('bSupArrets').addEventListener('click',()=>go('/supprimer_arrets_metro'));
   bA.addEventListener('click',()=>go('/arrets_'+Math.max(10,parseInt(nA.value,10)||700)));
@@ -3384,13 +3388,12 @@ function deleteTrack(){
   needSave=true;
   say(n+' blocs de rails supprimés ('+(n>1?'toute la voie reliée':'1 rail')+').','#ffd86b');
 }
-function stopsEvery(N){
+function trackCellsAim(){
   const s=findTrackRail();
-  if(!s){say('Visez un rail du métro (ou placez-vous près de la voie), puis retapez la commande.','#ff8a8a');return}
+  if(!s){say('Visez un rail du métro (ou placez-vous près de la voie), puis recommencez.','#ff8a8a');return null}
   const y=s[1],L=lookDir2();
   const ns=trackNeighbors(s[0],y,s[2]);
-  if(!ns.length){say('Cette voie est trop courte.','#ff8a8a');return}
-  /* extrémité derrière moi, puis on avance vers l'extrémité devant moi */
+  if(!ns.length){say('Cette voie est trop courte.','#ff8a8a');return null}
   const sorted=ns.slice().sort((p,q)=>(q[0]*L[0]+q[1]*L[1])-(p[0]*L[0]+p[1]*L[1]));
   const fwd=sorted[0],bwdD=ns.length>1?sorted[sorted.length-1]:[-fwd[0],-fwd[1]];
   let sx=s[0],sz=s[2],sd=fwd;
@@ -3398,7 +3401,12 @@ function stopsEvery(N){
     const wb=walkTrack(s[0],y,s[2],bwdD,30000);
     if(wb.path.length){sx=wb.cx;sz=wb.cz;sd=[-wb.dx,-wb.dz]}
   }
-  const w=walkTrack(sx,y,sz,sd,60000),full=[[sx,sz]].concat(w.path);
+  const w=walkTrack(sx,y,sz,sd,60000);
+  return{y,full:[[sx,sz]].concat(w.path)};
+}
+function stopsEvery(N){
+  const tc=trackCellsAim();if(!tc)return;
+  const y=tc.y,full=tc.full;
   if(!cur.metroStops)cur.metroStops={};
   let c=0;
   for(let i=N;i<full.length;i+=N){
@@ -3408,12 +3416,26 @@ function stopsEvery(N){
   needSave=true;
   say('Voie de '+full.length+' blocs : '+c+' arrêt(s) posé(s), un tous les '+N+' blocs.','#a8e6ff');
 }
+function trainsEvery(N){
+  const tc=trackCellsAim();if(!tc)return;
+  const y=tc.y,full=tc.full;let c=0;
+  for(let i=0;i<full.length&&c<60;i+=N){
+    const cell=full[i],prev=full[i>0?i-1:Math.min(1,full.length-1)];
+    let dx=i>0?cell[0]-prev[0]:prev[0]-cell[0],dz=i>0?cell[1]-prev[1]:prev[1]-cell[1];
+    if(Math.abs(dx)+Math.abs(dz)!==1){dx=1;dz=0}
+    if(trains.some(t=>t.cx===cell[0]&&t.cz===cell[1]&&t.cy===y))continue;
+    addTrain(cell[0],y,cell[1],dx,dz);c++;
+  }
+  needSave=true;
+  say(c+' métro(s) posé(s), un tous les '+N+' blocs sur une voie de '+full.length+' blocs.','#a8e6ff');
+}
 function runCommand(line){
   line=line.trim();if(!line)return;
   say('> '+line,'#9fb4e8');
   if(line[0]!=='/'){say('<Vous> '+line);return}
   const parts=line.slice(1).trim().split(/\s+/),cmd=norm(parts[0]||''),args=parts.slice(1);
   let _m;
+  if((_m=/^metros?_?(\d+)$/.exec(cmd))||(cmd==='metros'&&args[0])){trainsEvery(Math.max(10,parseInt(_m?_m[1]:args[0],10)||800));return}
   if(cmd==='supprimer_metro'||cmd==='supprimer_metros'||cmd==='supprimer_les_metros'){const n=trains.length;trains.slice().forEach(t=>removeTrain(t));needSave=true;say(n?n+' métro(s) supprimé(s).':'Aucun métro à supprimer.','#ffd86b');return}
   if((_m=/^(?:limite_?vitesse|vitesse_?limite|limiter_?vitesse)_?(\d+)?$/.exec(cmd))){
     const h=raycast();
