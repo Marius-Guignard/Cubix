@@ -1,0 +1,5 @@
+CUBIX
+Double-clique sur dist\Cubix-Setup.exe : Cubix s'installe tout seul
+(raccourci Bureau + menu Démarrer) et se lance.
+Pour mettre à jour : relance simplement Cubix-Setup.exe.
+Désinstaller : menu Démarrer > Cubix > Désinstaller.

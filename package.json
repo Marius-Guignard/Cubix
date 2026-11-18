@@ -1,0 +1,60 @@
+{
+  "name": "cubix",
+  "productName": "Cubix",
+  "version": "1.0.0",
+  "description": "Cubix — bac à sable en voxels",
+  "main": "main.js",
+  "author": "Marius",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "fr.marius.cubix",
+    "productName": "Cubix",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "index.html",
+      "three.min.js",
+      "icon.png"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cubix",
+      "artifactName": "Cubix-Setup-${version}.${ext}",
+      "language": "1036"
+    },
+    "artifactName": "Cubix-${version}.${ext}"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  }
+}
