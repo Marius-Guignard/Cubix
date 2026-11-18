@@ -1307,7 +1307,9 @@ function updateChunks(budget,rd){
 }
 function unloadFar(){
   const pcx=Math.floor(P.x/CS),pcz=Math.floor(P.z/CS),lim=(RD+3)*(RD+3);
+  const prot=new Set();trains.forEach(t=>{if(t.keep)t.keep.forEach(k=>prot.add(k))});
   chunkMap.forEach((ch,k)=>{
+    if(prot.has(k))return;
     const dx=ch.cx-pcx,dz=ch.cz-pcz;
     if(dx*dx+dz*dz>lim){disposeMesh(ch);chunkMap.delete(k)}
   });
@@ -1817,8 +1819,17 @@ function removeTrain(t){
   scene.remove(t.g);if(riding===t)riding=null;needSave=true;
 }
 function clearTrains(){trains.slice().forEach(t=>{scene.remove(t.g)});trains.length=0;riding=null;stopM.forEach((g,k)=>scene.remove(g));stopM.clear();limM.forEach((g,k)=>scene.remove(g));limM.clear()}
+function loopsBack(t,d){
+  const w=walkTrack(t.cx,t.cy,t.cz,d,20000),n=w.path.length;
+  if(n<4)return false;
+  const l=w.path[n-1];return Math.abs(l[0]-t.cx)+Math.abs(l[1]-t.cz)===1;
+}
 function chooseDir(t){
   const c=[[t.dx,t.dz],[-t.dz,t.dx],[t.dz,-t.dx]];
+  if(!isRailAt(t.cx+c[0][0],t.cy,t.cz+c[0][1])&&isRailAt(t.cx+c[1][0],t.cy,t.cz+c[1][1])&&isRailAt(t.cx+c[2][0],t.cy,t.cz+c[2][1])){
+    const pick=loopsBack(t,c[1])?c[1]:(loopsBack(t,c[2])?c[2]:c[1]);
+    t.dx=pick[0];t.dz=pick[1];return true;
+  }
   for(const d of c)if(isRailAt(t.cx+d[0],t.cy,t.cz+d[1])){t.dx=d[0];t.dz=d[1];return true}
   if(isRailAt(t.cx-t.dx,t.cy,t.cz-t.dz)){t.dx=-t.dx;t.dz=-t.dz;t.yaw=Math.atan2(t.dx,t.dz);return true}
   return false;
@@ -1845,8 +1856,17 @@ function aheadLimit(t){
   }
   return lim;
 }
+function ensureTrainChunks(t){
+  const keep=new Set(),k0=ckey(t.cx>>4,t.cz>>4);
+  if(!chunkMap.has(k0))genChunk(t.cx>>4,t.cz>>4);
+  keep.add(k0);
+  const w=walkTrack(t.cx,t.cy,t.cz,[t.dx,t.dz],140);
+  for(const c of w.path)keep.add(ckey(c[0]>>4,c[1]>>4));
+  t.keep=keep;
+}
 function updateTrains(dt){
   for(const t of trains.slice()){
+    t.ct=(t.ct||0)-dt;if(t.ct<=0){t.ct=.25;ensureTrainChunks(t)}
     if(!chunkMap.has(ckey(t.cx>>4,t.cz>>4))){continue}
     if(RAILB[get(t.cx,t.cy,t.cz)]!==1){if(riding===t)say('Le rail a disparu : vous descendez.','#ff8a8a');removeTrain(t);continue}
     const door=t.stopped?1:0;t.open+=(door-t.open)*Math.min(1,dt*4);
