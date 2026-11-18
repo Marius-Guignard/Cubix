@@ -96,7 +96,9 @@
 <div id="cmd"><div class="cmdhead">Invite de commande · tapez /aide</div><input id="cmdin" type="text" autocomplete="off" spellcheck="false" placeholder="/créer_village">
   <div id="cmdbtns">
     <button id="bVillage" type="button">Créer village</button>
+    <span class="grp">Vitesse max <input id="nVit" type="number" min="0" max="200" value="80"> km/h <button id="bLimit" type="button">Limiter (rail visé)</button></span>
     <button id="bUnArret" type="button">Poser un arrêt (visé)</button>
+    <button id="bSupMetro" type="button">Supprimer les métros</button>
     <button id="bSupVoie" type="button">Supprimer la voie</button>
     <button id="bSupArrets" type="button">Supprimer les arrêts</button>
     <span class="grp">Arrêts tous les <input id="nArrets" type="number" min="10" max="20000" value="700"> blocs <button id="bArrets" type="button">Poser les arrêts</button></span>
@@ -1814,7 +1816,7 @@ function removeTrain(t){
   const i=trains.indexOf(t);if(i>=0)trains.splice(i,1);
   scene.remove(t.g);if(riding===t)riding=null;needSave=true;
 }
-function clearTrains(){trains.slice().forEach(t=>{scene.remove(t.g)});trains.length=0;riding=null;stopM.forEach((g,k)=>scene.remove(g));stopM.clear()}
+function clearTrains(){trains.slice().forEach(t=>{scene.remove(t.g)});trains.length=0;riding=null;stopM.forEach((g,k)=>scene.remove(g));stopM.clear();limM.forEach((g,k)=>scene.remove(g));limM.clear()}
 function chooseDir(t){
   const c=[[t.dx,t.dz],[-t.dz,t.dx],[t.dz,-t.dx]];
   for(const d of c)if(isRailAt(t.cx+d[0],t.cy,t.cz+d[1])){t.dx=d[0];t.dz=d[1];return true}
@@ -1824,7 +1826,7 @@ function chooseDir(t){
 function isStop(x,y,z){return !!(cur&&cur.metroStops&&cur.metroStops[x+','+y+','+z])}
 const VMAX=200/3.6,TACC=14,TDEC=20,VCURVE=14;
 function aheadLimit(t){
-  let cx=t.cx,cz=t.cz,dx=t.dx,dz=t.dz,lim=VMAX;
+  let cx=t.cx,cz=t.cz,dx=t.dx,dz=t.dz,lim=t.zone||VMAX;
   const cons=(i,vt)=>{const d=Math.max(0,i-t.f);lim=Math.min(lim,Math.sqrt(vt*vt+2*TDEC*d))};
   for(let i=1;i<=110;i++){
     const nx=cx+dx,nz=cz+dz;
@@ -1838,6 +1840,7 @@ function aheadLimit(t){
       continue;
     }
     cx=nx;cz=nz;
+    {const lv=limitAt(cx,t.cy,cz);if(lv)cons(i,Math.min(lv/3.6,VMAX))}
     if(isStop(cx,t.cy,cz)){cons(i,0);break}
   }
   return lim;
@@ -1858,13 +1861,14 @@ function updateTrains(dt){
     }
     if(dt>0){
       const lim=aheadLimit(t);
-      t.v=Math.min(t.v+TACC*dt,VMAX,lim);
+      t.v=Math.min(t.v+TACC*dt,t.zone||VMAX,lim);
       if(t.v<2.5)t.v=2.5;
       let dist=t.v*dt;
       while(dist>0){
         const rem=1-t.f;
         if(dist<rem){t.f+=dist;break}
         dist-=rem;t.f=0;t.cx+=t.dx;t.cz+=t.dz;needSave=true;
+        {const lv=limitAt(t.cx,t.cy,t.cz);if(lv){t.zone=Math.min(lv/3.6,VMAX);if(riding===t)say('Limitation de vitesse : '+lv+' km/h','#ffd86b')}}
         if(isStop(t.cx,t.cy,t.cz)){t.wait=7;t.stopped=true;t.v=0;if(riding===t)say('Arrêt : clic droit sur le métro pour descendre.','#a8e6ff');break}
         if(!isRailAt(t.cx+t.dx,t.cy,t.cz+t.dz)){
           const odx=t.dx,odz=t.dz;
@@ -1944,7 +1948,32 @@ function makeStopMesh(k){
   g.position.set(p[0]+.5,p[1],p[2]+.5);scene.add(g);stopM.set(k,g);
 }
 function removeStopMesh(k){const g=stopM.get(k);if(g){scene.remove(g);stopM.delete(k)}}
-function buildStops(){stopM.forEach((g,k)=>scene.remove(g));stopM.clear();if(cur&&cur.metroStops)for(const k in cur.metroStops)makeStopMesh(k)}
+const limM=new Map(),limTex={};
+function limitAt(x,y,z){return(cur&&cur.metroLimits&&cur.metroLimits[x+','+y+','+z])||0}
+function limMat(v){
+  if(limTex[v])return limTex[v];
+  let tex=null;
+  try{
+    const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');
+    x.fillStyle='#fff';x.beginPath();x.arc(64,64,62,0,6.2832);x.fill();
+    x.strokeStyle='#d01818';x.lineWidth=14;x.beginPath();x.arc(64,64,54,0,6.2832);x.stroke();
+    x.fillStyle='#111';x.textAlign='center';x.textBaseline='middle';x.font='bold '+(String(v).length>2?46:56)+'px Arial,sans-serif';x.fillText(String(v),64,68);
+    tex=new THREE.CanvasTexture(c);
+  }catch(e){}
+  return limTex[v]=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide,transparent:true});
+}
+function removeLimMesh(k){const g=limM.get(k);if(g){scene.remove(g);limM.delete(k)}}
+function makeLimMesh(k,v){
+  removeLimMesh(k);
+  const p=k.split(',').map(Number),g=new THREE.Group();
+  const axisX=isRailAt(p[0]+1,p[1],p[2])||isRailAt(p[0]-1,p[1],p[2]);
+  const ox=axisX?0:-.46,oz=axisX?-.46:0;
+  bx(g,.06,1.1,.06,ox,.55,oz,[120,124,130]);
+  const pl=new THREE.Mesh(new THREE.PlaneGeometry(.5,.5),limMat(v));
+  pl.position.set(ox,1.2,oz);if(axisX)pl.rotation.y=0;else pl.rotation.y=Math.PI/2;
+  g.add(pl);g.position.set(p[0]+.5,p[1],p[2]+.5);scene.add(g);limM.set(k,g);
+}
+function buildStops(){stopM.forEach((g,k)=>scene.remove(g));stopM.clear();if(cur&&cur.metroStops)for(const k in cur.metroStops)makeStopMesh(k);limM.forEach((g,k)=>scene.remove(g));limM.clear();if(cur&&cur.metroLimits)for(const k in cur.metroLimits)makeLimMesh(k,cur.metroLimits[k])}
 function restoreTrains(){((cur&&cur.trains)||[]).forEach(a=>addTrain(a[0],a[1],a[2],a[3],a[4]))}
 function doAction(button,first){
   const h=raycast();
@@ -3243,6 +3272,10 @@ cmdIn.addEventListener('keyup',e=>e.stopPropagation());
   const go=line=>{closeCmd();runCommand(line)};
   bC.addEventListener('click',()=>go('/creer_village'));
   document.getElementById('bUnArret').addEventListener('click',()=>go('/delimiter_arrets_metro'));
+  document.getElementById('bLimit').addEventListener('click',()=>go('/limite_vitesse '+Math.max(0,Math.min(200,parseInt(document.getElementById('nVit').value,10)||0))));
+  document.getElementById('nVit').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape')closeCmd();if(e.key==='Enter'){e.preventDefault();document.getElementById('bLimit').click()}});
+  document.getElementById('nVit').addEventListener('keyup',e=>e.stopPropagation());
+  document.getElementById('bSupMetro').addEventListener('click',()=>go('/supprimer_metro'));
   document.getElementById('bSupVoie').addEventListener('click',()=>go('/supprimer_voie'));
   document.getElementById('bSupArrets').addEventListener('click',()=>go('/supprimer_arrets_metro'));
   bA.addEventListener('click',()=>go('/arrets_'+Math.max(10,parseInt(nA.value,10)||700)));
@@ -3327,6 +3360,7 @@ function deleteTrack(){
   }
   for(const c of q){setBlock(c[0],y,c[1],0);n++}
   if(cur.metroStops)for(const k in cur.metroStops){const p3=k.split(',').map(Number);if(p3[1]===y&&seen.has(p3[0]+','+p3[2])){delete cur.metroStops[k];removeStopMesh(k)}}
+  if(cur.metroLimits)for(const k in cur.metroLimits){const p3=k.split(',').map(Number);if(p3[1]===y&&seen.has(p3[0]+','+p3[2])){delete cur.metroLimits[k];removeLimMesh(k)}}
   needSave=true;
   say(n+' blocs de rails supprimés ('+(n>1?'toute la voie reliée':'1 rail')+').','#ffd86b');
 }
@@ -3360,6 +3394,15 @@ function runCommand(line){
   if(line[0]!=='/'){say('<Vous> '+line);return}
   const parts=line.slice(1).trim().split(/\s+/),cmd=norm(parts[0]||''),args=parts.slice(1);
   let _m;
+  if(cmd==='supprimer_metro'||cmd==='supprimer_metros'||cmd==='supprimer_les_metros'){const n=trains.length;trains.slice().forEach(t=>removeTrain(t));needSave=true;say(n?n+' métro(s) supprimé(s).':'Aucun métro à supprimer.','#ffd86b');return}
+  if((_m=/^(?:limite_?vitesse|vitesse_?limite|limiter_?vitesse)_?(\d+)?$/.exec(cmd))){
+    const h=raycast();
+    if(!h||!RAILB[get(h.x,h.y,h.z)]){say('Visez un rail du métro, puis donnez la vitesse (ex. /limite_vitesse 60).','#ff8a8a');return}
+    const v=Math.max(0,Math.min(200,parseInt(_m[1]||args[0],10)||0)),k=h.x+','+h.y+','+h.z;
+    if(!cur.metroLimits)cur.metroLimits={};
+    if(!v||cur.metroLimits[k]===v){delete cur.metroLimits[k];removeLimMesh(k);say('Limitation de vitesse retirée ici.','#ffd86b')}
+    else{cur.metroLimits[k]=v;makeLimMesh(k,v);say('Vitesse limitée à '+v+' km/h à partir de ce rail (jusqu\'à la prochaine limitation).','#a8e6ff')}
+    needSave=true;return}
   if(cmd==='supprimer_voie'||cmd==='supprimer_la_voie'){deleteTrack();return}
   if((_m=/^prolonger_?voie_?(\d+)?$/.exec(cmd))){extendTrack(Math.min(20000,parseInt(_m[1]||args[0],10)||4000));return}
   if((_m=/^arrets?_?(?:metro_?)?(\d+)$/.exec(cmd))||(cmd==='arrets'&&args[0])){stopsEvery(Math.max(10,parseInt(_m?_m[1]:args[0],10)||700));return}
