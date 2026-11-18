@@ -1774,7 +1774,7 @@ function glassBox(parent,w,h,d,x,y,z){const q=new THREE.Mesh(new THREE.BoxGeomet
 function buildTrainModel(){
   const g=new THREE.Group(),doors=[];
   const WH=[236,238,242],DK=[48,50,58],BL=[30,90,170],GR=[190,198,210];
-  const LC=3.2,GAP=.2,NC=3,TOT=NC*LC+(NC-1)*GAP,H2=TOT/2;
+  const LC=10/3,GAP=0,NC=3,TOT=NC*LC+(NC-1)*GAP,H2=TOT/2;
   for(let c=0;c<NC;c++){
     const zc=-H2+LC/2+c*(LC+GAP),hl=LC/2;
     bx(g,1.1,.2,LC-.1,0,.22,zc,DK);
@@ -1789,7 +1789,6 @@ function buildTrainModel(){
     });
     bx(g,1.24,.14,LC+.04,0,2.27,zc,[205,210,218]);
     bx(g,.5,.1,.6,0,2.39,zc+.8,[170,175,185]);bx(g,.5,.1,.6,0,2.39,zc-.8,[170,175,185]);
-    if(c<NC-1)bx(g,.9,1.6,GAP+.05,0,1.2,zc+hl+GAP/2,[30,32,38]);
   }
   [-1,1].forEach(e=>{
     bx(g,1.2,.75,.06,0,.875,e*H2,WH);bx(g,1.2,.16,.07,0,.97,e*H2,BL);
@@ -1878,7 +1877,8 @@ function updateTrains(dt){
 }
 function ridePlayer(){
   const t=riding;if(!t)return;
-  P.x=t.px;P.y=t.g.position.y+.5;P.z=t.pz;P.vx=0;P.vy=0;P.vz=0;P.ground=true;
+  const ty=t.yaw,lz=t.lz||0,lx=t.lx||0;
+  P.x=t.px+Math.sin(ty)*lz+Math.cos(ty)*lx;P.y=t.g.position.y+.5;P.z=t.pz+Math.cos(ty)*lz-Math.sin(ty)*lx;P.vx=0;P.vy=0;P.vz=0;P.ground=true;
 }
 function trainAtRay(h){
   const o=camera.position;camera.getWorldDirection(dirV);
@@ -1901,7 +1901,7 @@ function trainAtRay(h){
   return best;
 }
 function boardTrain(t){
-  riding=t;P.yaw=t.yaw+Math.PI;P.pitch=0;
+  riding=t;t.lx=0;t.lz=0;P.yaw=t.yaw+Math.PI;P.pitch=0;
   say(t.stopped?'Vous êtes dans le métro. Clic droit pour descendre.':'Vous êtes dans le métro. Descente possible aux arrêts (clic droit).','#a8e6ff');
 }
 function tryDismount(){
@@ -2071,6 +2071,12 @@ function update(dt){
   const sy=Math.sin(P.yaw),cy=Math.cos(P.yaw);
   let wx=-sy*fw+cy*st,wz=-cy*fw-sy*st;
   const l=Math.hypot(wx,wz);if(l>1){wx/=l;wz/=l}
+  if(riding){
+    const t=riding,ty=t.yaw,fx=Math.sin(ty),fz=Math.cos(ty),rx=Math.cos(ty),rz=-Math.sin(ty),sp=sprint?5:3.2;
+    t.lz=Math.max(-4.6,Math.min(4.6,(t.lz||0)+(wx*fx+wz*fz)*sp*dt));
+    t.lx=Math.max(-.42,Math.min(.42,(t.lx||0)+(wx*rx+wz*rz)*sp*dt));
+    P.vx=P.vy=P.vz=0;return;
+  }
   if(fly){
     const cp=Math.cos(P.pitch);wx*=cp;wz*=cp;
     P.vy=fw*Math.sin(P.pitch)*speed+((keys.Space?1:0)-(shift?1:0))*speed*.8;
