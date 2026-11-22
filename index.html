@@ -218,6 +218,7 @@ const bricks=(c,m,mode)=>newTile((x,y)=>{
 const chiseled=c=>newTile((x,y)=>{const e=Math.min(x,y,15-x,15-y),v=rj(6);if(e===0||e===5)return[c[0]*.7,c[1]*.7,c[2]*.7];if(e<5)return[c[0]+v,c[1]+v,c[2]+v];return[c[0]*.85+v,c[1]*.85+v,c[2]*.85+v]});
 const metal=c=>newTile((x,y)=>{const e=(x===0||y===0||x===15||y===15||x===7||x===8||y===7||y===8);const s=(e?-26:0)+((x+y===5||x+y===6)?30:0)+rj(6);return[c[0]+s,c[1]+s,c[2]+s]});
 const leafT=c=>newTile(()=>{if(R()<.22)return[0,0,0,0];const v=rj(40);return[c[0]+v*.6,c[1]+v,c[2]+v*.5,255]});
+const petalT=(pal,wt)=>newTile(()=>{if(R()<.16)return[0,0,0,0];let r=R()*wt[0]+0,i=0,s=0;const t=R()*(wt[0]+wt[1]+wt[2]);i=t<wt[0]?0:(t<wt[0]+wt[1]?1:2);const c=pal[i],v=rj(18);return[c[0]+v*.5,c[1]+v*.5,c[2]+v*.5,255]});
 const planksT=c=>newTile((x,y)=>{const d=(y%4===3)?-34:0,v=rj(12);return[c[0]+d+v,c[1]+d+v,c[2]+d+v]});
 const logSideT=c=>newTile(x=>{const d=(x%4===0?-18:0)+rj(10);return[c[0]+d,c[1]+d,c[2]+d]});
 const logTopT=(c,bark)=>newTile((x,y)=>{const d=Math.max(Math.abs(x-7.5),Math.abs(y-7.5));if(d>=7)return bark;const v=rj(8),r=Math.floor(d)%2?-14:0;return[c[0]+v+r,c[1]+v+r,c[2]+v+r]});
@@ -249,7 +250,8 @@ COLORS.forEach((c,i)=>{
   reg('Bois','Planches '+de+w[0],planksT(w[1]));
   const side=logSideT(w[2]),top=logTopT(w[3],w[2]);
   reg('Bois','Bûche '+de+w[0],top,top,side);
-  reg('Nature','Feuilles '+de+w[0],leafT(w[4]),undefined,undefined,true);
+  const PAL=[[238,120,128],[252,248,248],[246,172,204]];
+  reg('Nature','Feuilles '+de+w[0],petalT(PAL,w[0]==='cerisier'?[2,2,6]:[1,6,3]),undefined,undefined,true);
 });
 reg('Bois','Planches de bouleau',planksT([196,179,123]));
 reg('Nature','Feuilles de bouleau',leafT([100,150,60]),undefined,undefined,true);
@@ -551,7 +553,7 @@ TREETYPES.forEach(mkTree);
   ITEMOF[b]=a;GROW[a]={bamboo:1,t:5};GROW[b]={bamboo:2,t:5};
 }
 /* --- cerisier & amandier (ajoutés en fin de catalogue pour garder les anciens numéros) --- */
-[['cerisier',[226,160,150],[74,48,48],[150,100,96],[236,140,182],'round',[4,6]],['amandier',[206,176,136],[92,72,58],[182,152,112],[248,224,228],'dome',[4,5]]].forEach(w=>{
+[['cerisier',[226,160,150],[74,48,48],[150,100,96],[236,140,182],'blossom',[2,2]],['amandier',[206,176,136],[92,72,58],[182,152,112],[248,224,228],'blossom',[2,2]]].forEach(w=>{
   const de=(/^[aeiouyé]/.test(w[0]))?'d\'':'de ';
   reg('Bois','Planches '+de+w[0],planksT(w[1]));
   const side=logSideT(w[2]),top=logTopT(w[3],w[2]);
@@ -914,6 +916,21 @@ let METROID=0;
     return null;
   });
   METROID=reg('Transport','Métro',mi,mi,mi,true);
+}
+/* --- vitres fines transparente et givrée (ajoutées en fin de catalogue) --- */
+{
+  const clearT=DEF[10].t;
+  const frostT=newTile((x,y)=>{const e=Math.min(x,y,15-x,15-y),v=rj(14);return e<1?[236,244,250,230]:[222+v*.3,234+v*.3,242+v*.3,150+(v>6?30:0)]});
+  [['Vitre fine transparente',clearT],['Vitre fine givrée',frostT]].forEach(g=>{
+    const id=reg('Maison',g[0],g[1],g[1],g[1],true);
+    CONN[id]=true;
+    MODELS[id]=nb=>{
+      const ax=nb(1,0)||nb(-1,0),az=nb(0,1)||nb(0,-1),r=[];
+      if(ax||!az)r.push([0,0,7.5,16,16,8.5,g[1]]);
+      if(az)r.push([7.5,0,0,8.5,16,16,g[1]]);
+      return r;
+    };
+  });
 }
 const SOIL=new Uint8Array(2048);[1,2,ID('Podzol'),ID('Mycélium'),ID('Terre grossière'),ID('Terre labourée'),ID('Argile')].forEach(i=>{if(i>0)SOIL[i]=1});
 const BAMBOOSOIL=new Uint8Array(2048);for(let i=0;i<2048;i++)BAMBOOSOIL[i]=SOIL[i];BAMBOOSOIL[4]=1;BAMBOOSOIL[13]=1;
@@ -1447,11 +1464,12 @@ function buildTree(x,y,z,tt){
   const hh=tt.h[0]+Math.floor(hash(x*3+1,z*5+2)*(tt.h[1]-tt.h[0]+1));
   let th=0;
   for(let i=0;i<hh;i++){const b=get(x,y+i,z);if(b!==0&&!PASSB[b]&&!(i===0))break;th=i+1}
-  if(th<3)return false;
+  if(th<(tt.shape==='blossom'?2:3))return false;
   for(let i=0;i<th;i++)S(x,y+i,z,tt.log);
   const L=(dx,dy,dz)=>{const b=get(x+dx,y+dy,z+dz);if(b===0||PASSB[b])S(x+dx,y+dy,z+dz,tt.leaf)};
   const layer=(dy,r,cut)=>{for(let dx=-r;dx<=r;dx++)for(let dz=-r;dz<=r;dz++){if(dx===0&&dz===0&&dy<th)continue;if(cut&&Math.abs(dx)===r&&Math.abs(dz)===r&&hash(x+dx*3,z+dz*5+dy)<.5)continue;L(dx,dy,dz)}};
-  if(tt.shape==='round'){layer(th-2,2,true);layer(th-1,2,true);layer(th,1,false);layer(th+1,1,true)}
+  if(tt.shape==='blossom'){const nl=1+Math.floor(hash(x*7+3,z*11+5)*4),rr=[2,2,1,1];for(let i=0;i<nl;i++)layer(th+i,rr[i],i===0||i===nl-1)}
+  else if(tt.shape==='round'){layer(th-2,2,true);layer(th-1,2,true);layer(th,1,false);layer(th+1,1,true)}
   else if(tt.shape==='cone'){for(let dy=2;dy<=th+1;dy++){const r=Math.max(0,Math.min(3,Math.floor((th+1-dy)/2)));layer(dy,r,r>1)}L(0,th+1,0);L(0,th+2,0)}
   else if(tt.shape==='tall'){layer(th-2,3,true);layer(th-1,3,true);layer(th,2,true);layer(th+1,1,false)}
   else if(tt.shape==='flat'){layer(th-1,3,true);layer(th,3,true);layer(th+1,1,false)}
