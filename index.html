@@ -1476,6 +1476,22 @@ function buildTree(x,y,z,tt){
   else{layer(th-2,3,true);layer(th-1,3,true);layer(th,2,true);layer(th+1,1,false)}
   return true;
 }
+function fellTree(x,y,z,logId){
+  const tt=TREETYPES.find(q=>q.log===logId);
+  if(!tt)return 0;
+  const seen=new Set(),q=[],cells=[];let leaves=0,logs=0;
+  const ok=(a,b,c)=>{const v=get(a,b,c);return v===tt.log||v===tt.leaf};
+  const push=(a,b,c)=>{if(Math.abs(a-x)>4||Math.abs(c-z)>4||b<y-12||b>y+14)return;const k=a+','+b+','+c;if(seen.has(k)||!ok(a,b,c))return;seen.add(k);q.push([a,b,c])};
+  for(const d of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]])push(x+d[0],y+d[1],z+d[2]);
+  for(let i=0;i<q.length&&i<900;i++){
+    const c=q[i];cells.push(c);
+    if(get(c[0],c[1],c[2])===tt.leaf)leaves++;else logs++;
+    for(const d of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]])push(c[0]+d[0],c[1]+d[1],c[2]+d[2]);
+  }
+  if(!leaves)return 0;
+  for(const c of cells)setBlock(c[0],c[1],c[2],0);
+  return logs;
+}
 function plantTick(){
   const keys=Array.from(plants);
   for(const k of keys){
@@ -2039,9 +2055,11 @@ function doAction(button,first){
       if(ITEMOF[id])id=ITEMOF[id];
       if(BASEOF[id]){const bs=BASEOF[id];id=bs;if(get(h.x,h.y-1,h.z)===bs)setBlock(h.x,h.y-1,h.z,0)}
       else if(TOPOF[id]&&get(h.x,h.y+1,h.z)===TOPOF[id])setBlock(h.x,h.y+1,h.z,0);
+      const _logId=id;
       setBlock(h.x,h.y,h.z,0);
+      const _extra=fellTree(h.x,h.y,h.z,_logId);
       if(!creative){
-        bag[id]=(bag[id]||0)+1;
+        bag[id]=(bag[id]||0)+1+_extra;
         if(!HOTBAR.includes(id)){const i=HOTBAR.indexOf(0);if(i>=0)HOTBAR[i]=id}
         refreshSlots();
       }
