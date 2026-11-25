@@ -309,7 +309,7 @@ reg('Décoration','Magma',newTile((x,y)=>{const c=((x*3+y*5)%9<2);return c?[250,
 
 /* ---- lumières, ferme, village ---- */
 const CUT=[0,0,0,0];
-const LAVA=reg('Nature','Lave',newTile((x,y)=>{const n=Math.sin(x*.9+y*.4)+Math.sin(y*1.3-x*.5);const v=n>.8?[255,230,90]:n>0?[255,150,30]:[210,80,10];return[v[0]+rj(10),v[1]+rj(10),v[2]]}));
+const LAVA=reg('Nature','Lave',newTile((x,y)=>{const n=Math.sin(x*.7+Math.sin(y*.5)*2.2)+Math.sin(y*.8+Math.cos(x*.6)*2.2)+Math.sin((x+y)*.45+1.3);const k=(n+3)/6;let v;if(k>.74)v=[255,238,120];else if(k>.58)v=[255,176,36];else if(k>.4)v=[236,98,14];else v=[130,26,6];const j=rj(14);return[v[0]+j,v[1]+j*.6,v[2]]}));
 const torchT=newTile((x,y)=>{if((x===7||x===8)&&y>=5)return[110+rj(10),76,40];if(x>=6&&x<=9&&y>=1&&y<5&&!(y===1&&(x===6||x===9)))return y<3?[255,230,110]:[255,150,30];return CUT});
 const lantT=newTile((x,y)=>{if((x===7||x===8)&&y<3)return[50,50,55];if(x<4||x>11||y<3||y>13)return CUT;const fr=(x===4||x===11||y===3||y===13||y===4);if(fr)return[48,48,52];return[255,225+rj(20),120]});
 const headT=newTile((x,y)=>{if(y<2||y>14||x<2||x>13)return CUT;if(y<4)return(x>3&&x<12)?[44,44,48]:CUT;if(y>12)return[44,44,48];const fr=(x===2||x===13||x===7||x===8&&false);if(x<3||x>12||x===7||x===8)return[44,44,48];return[255,236,150+rj(20)]});
@@ -932,6 +932,10 @@ let METROID=0;
     };
   });
 }
+/* --- lave qui coule (ajoutée en fin de catalogue) --- */
+const LV=new Uint8Array(2048),LLV=new Uint8Array(2048),LF=[];
+LV[LAVA]=1;LLV[LAVA]=9;
+for(let i=1;i<=8;i++){const id=reg(null,'Lave coulante '+i,DEF[LAVA].t,DEF[LAVA].b,DEF[LAVA].s,false);LF[i]=id;LV[id]=1;LLV[id]=i;EMIT[id]=.9}
 const SOIL=new Uint8Array(2048);[1,2,ID('Podzol'),ID('Mycélium'),ID('Terre grossière'),ID('Terre labourée'),ID('Argile')].forEach(i=>{if(i>0)SOIL[i]=1});
 const BAMBOOSOIL=new Uint8Array(2048);for(let i=0;i<2048;i++)BAMBOOSOIL[i]=SOIL[i];BAMBOOSOIL[4]=1;BAMBOOSOIL[13]=1;
 INV['Fleurs']=INV['Fleurs'];
@@ -1145,12 +1149,12 @@ function genChunk(cx,cz){
     }
   }
   const ed=cur&&cur.edits[cx+','+cz];
-  if(ed)for(const k in ed){const v=ed[k];d[k]=v;if(GROW[v]){const li=+k,wy=Math.floor(li/(CS*CS)),r=li%(CS*CS);pendingPlants.push((cx*CS+(r%CS))+','+wy+','+(cz*CS+Math.floor(r/CS)))}if(v===WATER){const li=+k,wy=Math.floor(li/(CS*CS)),r=li%(CS*CS);pendingWake.push([cx*CS+(r%CS),wy,cz*CS+Math.floor(r/CS)])}const y=Math.floor(k/(CS*CS));if(y+1>maxY)maxY=y+1}
+  if(ed)for(const k in ed){const v=ed[k];d[k]=v;if(GROW[v]){const li=+k,wy=Math.floor(li/(CS*CS)),r=li%(CS*CS);pendingPlants.push((cx*CS+(r%CS))+','+wy+','+(cz*CS+Math.floor(r/CS)))}if(v===WATER||v===LAVA){const li=+k,wy=Math.floor(li/(CS*CS)),r=li%(CS*CS);pendingWake.push([cx*CS+(r%CS),wy,cz*CS+Math.floor(r/CS)])}const y=Math.floor(k/(CS*CS));if(y+1>maxY)maxY=y+1}
   const ch={cx,cz,d,maxY:Math.min(H-1,maxY),a:null,b:null,meshed:false};
   { const od=cur&&cur.doorsOpen&&cur.doorsOpen[cx+','+cz]; if(od)ch.od=new Set(od); }
   chunkMap.set(ckey(cx,cz),ch);
   while(pendingPlants.length)plants.add(pendingPlants.pop());
-  while(pendingWake.length){const q=pendingWake.pop();wq.add(q[0]+','+q[1]+','+q[2])}
+  while(pendingWake.length){const q=pendingWake.pop();wq.add(q[0]+','+q[1]+','+q[2]);lq.add(q[0]+','+q[1]+','+q[2])}
   return ch;
 }
 
@@ -1169,6 +1173,14 @@ function patchMat(m){m.onBeforeCompile=sh=>{sh.uniforms.uDay=uDay;sh.vertexShade
 const matA=new THREE.MeshBasicMaterial({map:atlasTex,vertexColors:true,alphaTest:.5});
 const matW=new THREE.MeshBasicMaterial({map:atlasTex,vertexColors:true,transparent:true,opacity:.62,depthWrite:false});
 patchMat(matA);patchMat(matW);
+const uT={value:0};
+const matL=new THREE.MeshBasicMaterial({map:atlasTex,vertexColors:true});
+matL.onBeforeCompile=sh=>{
+  sh.uniforms.uT=uT;
+  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vWp;').replace('#include <begin_vertex>','#include <begin_vertex>\nvWp=(modelMatrix*vec4(position,1.)).xyz;');
+  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uT;\nvarying vec3 vWp;\nfloat lh(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}\nfloat lvn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(lh(i),lh(i+vec3(1,0,0)),f.x),mix(lh(i+vec3(0,1,0)),lh(i+vec3(1,1,0)),f.x),f.y),mix(mix(lh(i+vec3(0,0,1)),lh(i+vec3(1,0,1)),f.x),mix(lh(i+vec3(0,1,1)),lh(i+vec3(1,1,1)),f.x),f.y),f.z);}\nfloat lfb(vec3 p){return lvn(p)*.55+lvn(p*2.1+7.)*.3+lvn(p*4.3+3.)*.15;}')
+   .replace('#include <color_fragment>','#include <color_fragment>\n{vec3 q=vWp*1.35;float n=lfb(q+vec3(uT*.11,-uT*.05,uT*.08));float m2=lfb(q*1.7+vec3(-uT*.09,uT*.04,uT*.12)+n*1.6);float k=n*.6+m2*.4;vec3 c=mix(vec3(.30,.03,.0),vec3(.85,.16,.02),smoothstep(.30,.52,k));c=mix(c,vec3(1.,.55,.06),smoothstep(.50,.66,k));c=mix(c,vec3(1.,.9,.35),smoothstep(.68,.82,k));c*=.9+.1*sin(uT*1.7+k*9.);diffuseColor.rgb=c*mix(1.,vColor.r,.35);}');
+};
 const world=new THREE.Group();scene.add(world);
 const FACES=[
   {n:[1,0,0],c:[[1,0,1],[1,0,0],[1,1,0],[1,1,1]],s:.82},
@@ -1193,6 +1205,7 @@ function mkGeo(g){
 function disposeMesh(ch){
   if(ch.a){world.remove(ch.a);ch.a.geometry.dispose();ch.a=null}
   if(ch.b){world.remove(ch.b);ch.b.geometry.dispose();ch.b=null}
+  if(ch.c){world.remove(ch.c);ch.c.geometry.dispose();ch.c=null}
   ch.meshed=false;
 }
 const GR=12;
@@ -1248,7 +1261,7 @@ function emitModel(g,boxes,lx,y,lz,EM,b){
   }
 }
 function buildChunk(ch){
-  const A={p:[],u:[],c:[],i:[],l:[]},B={p:[],u:[],c:[],i:[],l:[]};
+  const A={p:[],u:[],c:[],i:[],l:[]},B={p:[],u:[],c:[],i:[],l:[]},C={p:[],u:[],c:[],i:[],l:[]};
   const EM=gatherEmitters(ch);
   const d=ch.d,cx=ch.cx,cz=ch.cz,pad=0.002;
   for(let y=0;y<=ch.maxY;y++)for(let lz=0;lz<CS;lz++)for(let lx=0;lx<CS;lx++){
@@ -1257,8 +1270,9 @@ function buildChunk(ch){
       let bxs=MODELS[b];
       if(typeof bxs==='function')bxs=bxs((ddx,ddz,ddy)=>{const nn=nbAt(ch,lx+ddx,y+(ddy||0),lz+ddz);return CONN[nn]||isOpaque(nn)},!!(ch.od&&ch.od.has((y*CS+lz)*CS+lx)),(ddx,ddz)=>nbAt(ch,lx+ddx,y,lz+ddz));
       emitModel(A,bxs,lx,y,lz,EM,b);continue}
-    const g=ISW[b]?B:A,def=DEF[b],op=isOpaque(b);
-    const hh=1;
+    const g=LV[b]?C:(ISW[b]?B:A),def=DEF[b],op=isOpaque(b);
+    let hh=1;
+    if(LV[b]&&!LV[nbAt(ch,lx,y+1,lz)])hh=b===LAVA?.88:.2+.085*LLV[b];
     for(let f=0;f<6;f++){
       const F=FACES[f];
       const nx=lx+F.n[0],ny=y+F.n[1],nz=lz+F.n[2];
@@ -1266,7 +1280,8 @@ function buildChunk(ch){
       if(ny<0)n=1;else if(ny>=H)n=0;
       else if(nx>=0&&nx<CS&&nz>=0&&nz<CS)n=d[(ny*CS+nz)*CS+nx];
       else{const o=chunkMap.get(ckey(cx+(nx<0?-1:nx>=CS?1:0),cz+(nz<0?-1:nz>=CS?1:0)));n=o?o.d[(ny*CS+(nz&15))*CS+(nx&15)]:0}
-      if(ISW[b]){if(ISW[n]||isOpaque(n))continue;if(f!==2&&f!==3)continue}
+      if(LV[b]){if(LV[n]||isOpaque(n))continue}
+      else if(ISW[b]){if(ISW[n]||isOpaque(n))continue;if(f!==2&&f!==3)continue}
       else if(op){if(isOpaque(n))continue;}
       else if(n===b||isOpaque(n))continue;
       const tile=f===2?def.t:f===3?def.b:def.s;
@@ -1285,9 +1300,10 @@ function buildChunk(ch){
     }
   }
   disposeMesh(ch);
-  const ga=mkGeo(A),gb=mkGeo(B);
+  const ga=mkGeo(A),gb=mkGeo(B),gc=mkGeo(C);
   if(ga){ch.a=new THREE.Mesh(ga,matA);ch.a.position.set(cx*CS,0,cz*CS);world.add(ch.a)}
   if(gb){ch.b=new THREE.Mesh(gb,matW);ch.b.position.set(cx*CS,0,cz*CS);ch.b.renderOrder=1;world.add(ch.b)}
+  if(gc){ch.c=new THREE.Mesh(gc,matL);ch.c.position.set(cx*CS,0,cz*CS);world.add(ch.c)}
   ch.meshed=true;
 }
 let ring=[];
@@ -1347,7 +1363,7 @@ function setBlock(x,y,z,b,noSave){
   if(EMIT[b]!==undefined||EMIT[old]!==undefined){ch.em=null;for(let a=-1;a<=1;a++)for(let c2=-1;c2<=1;c2++){const o=chunkMap.get(ckey(cx+a,cz+c2));if(o)dirty.add(o)}}
   if(GROW[b])plants.add(x+','+y+','+z);
   if(!noSave){const k=cx+','+cz;(cur.edits[k]||(cur.edits[k]={}))[li]=b;needSave=true}
-  if(ISW[old]||ISW[b]||ISW[get(x+1,y,z)]||ISW[get(x-1,y,z)]||ISW[get(x,y+1,z)]||ISW[get(x,y-1,z)]||ISW[get(x,y,z+1)]||ISW[get(x,y,z-1)])wake(x,y,z);
+  if(LV[old]||LV[b]||ISW[old]||ISW[b]||ISW[get(x+1,y,z)]||ISW[get(x-1,y,z)]||ISW[get(x,y+1,z)]||ISW[get(x,y-1,z)]||ISW[get(x,y,z+1)]||ISW[get(x,y,z-1)])wake(x,y,z);
   dirty.add(ch);
   const lx=x&15,lz=z&15;
   const nb=(a,c)=>{const o=chunkMap.get(ckey(a,c));if(o)dirty.add(o)};
@@ -1501,7 +1517,7 @@ function plantTick(){
     if(!g){plants.delete(k);continue}
     const bl=get(x,y-1,z);
     if(g.uw){
-      if(bl===0||bl===LAVA||ISW[bl]===1){S(x,y,z,0);plants.delete(k);continue}
+      if(bl===0||LV[bl]||ISW[bl]===1){S(x,y,z,0);plants.delete(k);continue}
       if(Math.random()>1/g.t)continue;
       if(g.kelp){
         let cnt=0,yy=y;while(get(x,yy,z)===b&&cnt<12){cnt++;yy--}
@@ -1512,7 +1528,7 @@ function plantTick(){
       if(g.n)S(x,y,z,g.n);
       continue;
     }
-    if(bl===0||ISW[bl]||bl===LAVA){if(!(g.bamboo&&(GROW[bl]&&GROW[bl].bamboo))){S(x,y,z,0);plants.delete(k);continue}}
+    if(bl===0||ISW[bl]||LV[bl]){if(!(g.bamboo&&(GROW[bl]&&GROW[bl].bamboo))){S(x,y,z,0);plants.delete(k);continue}}
     if(Math.random()>1/g.t)continue;
     if(g.bamboo){
       let cnt=0,yy=y;while(GROW[get(x,yy,z)]&&GROW[get(x,yy,z)].bamboo&&cnt<20){cnt++;yy--}
@@ -1532,7 +1548,8 @@ function plantTick(){
 /* ---------- Eau qui coule ---------- */
 const wq=new Set(),plants=new Set();let waterT=0,plantT=0;
 const WNB=[[0,0,0],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-function wake(x,y,z){for(const o of WNB){const yy=y+o[1];if(yy>=0&&yy<H)wq.add((x+o[0])+','+yy+','+(z+o[2]))}}
+const lq=new Set();let lavaFT=0;
+function wake(x,y,z){for(const o of WNB){const yy=y+o[1];if(yy>=0&&yy<H){const k=(x+o[0])+','+yy+','+(z+o[2]);wq.add(k);lq.add(k)}}}
 function supported(x,y,z){return y<=0||solidAt(x,y-1,z)||get(x,y-1,z)===WATER}
 function basinFill(sx,sy,sz){
   const LIM=6000,seen=new Set(),q=[[sx,sy,sz]],fill=[];
@@ -1563,7 +1580,7 @@ function waterTick(){
     const p=k.split(',').map(Number),x=p[0],y=p[1],z=p[2];
     const ch=chunkMap.get(ckey(x>>4,z>>4));if(!ch)continue;
     const b=get(x,y,z);
-    if(b===WATER||b===LAVA)continue;
+    if(b===WATER||LV[b])continue;
     if(b!==0&&!WLV[b])continue;
     if(b!==0&&WLV[b]&&false)continue;
     let want=0;
@@ -1586,6 +1603,42 @@ function waterTick(){
     }else if(b!==0&&WLV[b]){setBlock(x,y,z,0,true)}
   }
 }
+function lavaSupported(x,y,z){return y<=0||solidAt(x,y-1,z)||get(x,y-1,z)===LAVA}
+const OBSID=ID('Obsidienne');
+function lavaTick(){
+  if(!lq.size||!cur)return;
+  const cells=[];let n=0;
+  for(const k of lq){cells.push(k);lq.delete(k);if(++n>=500)break}
+  for(const k of cells){
+    const p=k.split(',').map(Number),x=p[0],y=p[1],z=p[2];
+    if(!chunkMap.has(ckey(x>>4,z>>4)))continue;
+    const b=get(x,y,z);
+    if(LV[b]){
+      let wat=false;
+      for(const d of WNB){if(ISW[get(x+d[0],y+d[1],z+d[2])]===1){wat=true;break}}
+      if(wat){setBlock(x,y,z,b===LAVA&&OBSID>0?OBSID:3,true);continue}
+    }
+    if(b===LAVA)continue;
+    if(b!==0&&!LV[b])continue;
+    let want=0;
+    if(LV[get(x,y+1,z)])want=8;
+    else{
+      for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=x+d[0],nz=z+d[1],nb=get(nx,y,nz);
+        if(!LV[nb])continue;
+        if(!lavaSupported(nx,y,nz))continue;
+        const l=LLV[nb]-1;if(l>want)want=l;
+      }
+    }
+    if(b===0||LV[b]){
+      let srcN=0;for(const d of [[1,0],[-1,0],[0,1],[0,-1]])if(get(x+d[0],y,z+d[1])===LAVA)srcN++;
+      if(srcN>=2&&lavaSupported(x,y,z)){setBlock(x,y,z,LAVA,true);continue}
+    }
+    if(want>0){
+      if(b===0||LLV[b]!==want){if(ISW[b])continue;setBlock(x,y,z,LF[want],true)}
+    }else if(b!==0&&LV[b]){setBlock(x,y,z,0,true)}
+  }
+}
 /* ---------- Joueur ---------- */
 const P={x:0,y:60,z:0,vx:0,vy:0,vz:0,yaw:0,pitch:-.2,ground:false,fly:false,fast:false,noclip:false};
 const HW=.3,PH=1.8,EYE=1.62;
@@ -1595,7 +1648,7 @@ function solidAt(x,y,z){
   const ch=chunkMap.get(ckey(x>>4,z>>4));
   if(!ch)return true;
   const b=ch.d[(y*CS+(z&15))*CS+(x&15)];
-  return b!==0&&!ISW[b]&&b!==LAVA&&!PASSB[b]&&!(DOOR[b]&&ch.od&&ch.od.has((y*CS+(z&15))*CS+(x&15)));
+  return b!==0&&!ISW[b]&&!LV[b]&&!PASSB[b]&&!(DOOR[b]&&ch.od&&ch.od.has((y*CS+(z&15))*CS+(x&15)));
 }
 function boxCol(px,py,pz,hw,ph){
   const x0=Math.floor(px-hw),x1=Math.floor(px+hw-1e-4);
@@ -2073,7 +2126,7 @@ function doAction(button,first){
     if(id>=1000){if(first&&creative)spawnAtHit(id);return}
     const tx=h.x+h.nx,ty=h.y+h.ny,tz=h.z+h.nz;
     const t=get(tx,ty,tz);
-    if(ty>=0&&ty<H&&(t===0||ISW[t]||t===LAVA)&&!hitsPlayer(tx,ty,tz)){
+    if(ty>=0&&ty<H&&(t===0||ISW[t]||LV[t])&&!hitsPlayer(tx,ty,tz)){
       if(!creative){if(!(bag[id]>0))return;bag[id]--;refreshSlots()}
       if(TOPOF[id]){const t2=get(tx,ty+1,tz);if(ty+1<H&&(t2===0||ISW[t2])){setBlock(tx,ty,tz,id);setBlock(tx,ty+1,tz,TOPOF[id])}else if(!creative){bag[id]++;refreshSlots()}return}
       let pid=id;
@@ -2129,7 +2182,7 @@ function raycast(){
     else{z+=sz;t=tz;tz+=dz;nx=0;ny=0;nz=-sz}
     if(t>6)return null;
     const b=get(x,y,z);
-    if(b!==0&&(!ISW[b]||ISW[b]===2)&&b!==LAVA&&y>=0&&y<H)return{x,y,z,nx,ny,nz};
+    if(b!==0&&(!ISW[b]||ISW[b]===2)&&!LV[b]&&y>=0&&y<H)return{x,y,z,nx,ny,nz};
   }
   return null;
 }
@@ -2152,7 +2205,7 @@ function update(dt){
   const sneak=shift&&!fly;
   const sprint=keys.KeyE&&!fly;
   const inWater=get(Math.floor(P.x),Math.floor(P.y+.4),Math.floor(P.z))>0&&ISW[get(Math.floor(P.x),Math.floor(P.y+.4),Math.floor(P.z))]>0;
-  if(get(Math.floor(P.x),Math.floor(P.y+.2),Math.floor(P.z))===LAVA){P.vy=Math.max(P.vy,-1.5);if(damage&&!P.fly){lavaT+=dt;if(lavaT>.5){lavaT=0;hurt(4)}}}
+  if(LV[get(Math.floor(P.x),Math.floor(P.y+.2),Math.floor(P.z))]){P.vy=Math.max(P.vy,-1.5);if(damage&&!P.fly){lavaT+=dt;if(lavaT>.5){lavaT=0;hurt(4)}}}
   let speed=fly?(P.fast?22:11):((sprint||(P.fast&&creative))?7:(sneak?2.2:4.4));
   if(inWater&&!fly)speed*=.6;
   const sy=Math.sin(P.yaw),cy=Math.cos(P.yaw);
@@ -2200,6 +2253,8 @@ function frame(now){
   updateChunks(3,RD);
   plantT+=dt;if(plantT>1){plantT=0;plantTick();signVis()}
   waterT+=dt;if(waterT>.12){waterT=0;waterTick()}
+  lavaFT+=dt;if(lavaFT>.45){lavaFT=0;lavaTick()}
+  uT.value=now/1000;
   if(frameN%120===0)unloadFar();
   tod+=dt/180;
   const f=Math.max(0,Math.min(1,.5+.75*Math.sin(tod*Math.PI*2)));
